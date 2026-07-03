@@ -1,0 +1,143 @@
+-- =============================================================================
+-- 🏪 SISTEMA CONTROL DE INSUMOS TAMBO II - SCRIPT OFICIAL DE BASE DE DATOS
+-- =============================================================================
+
+-- 1. Limpieza de tablas (Garantiza una instalación limpia)
+DROP TABLE IF EXISTS public.movimientos CASCADE;
+DROP TABLE IF EXISTS public.stock_local CASCADE;
+DROP TABLE IF EXISTS public.usuarios CASCADE;
+DROP TABLE IF EXISTS public.roles CASCADE;
+DROP TABLE IF EXISTS public.insumos CASCADE;
+DROP TABLE IF EXISTS public.locales CASCADE;
+
+-- 2. Creación de Estructuras de Tabla
+CREATE TABLE public.locales (
+    id_local SERIAL PRIMARY KEY,
+    nombre_local VARCHAR(100) NOT NULL UNIQUE
+);
+
+CREATE TABLE public.roles (
+    id_rol SERIAL PRIMARY KEY,
+    nombre_rol VARCHAR(20) NOT NULL UNIQUE
+);
+
+CREATE TABLE public.insumos (
+    id_insumo SERIAL PRIMARY KEY,
+    codigo_producto VARCHAR(50) UNIQUE,
+    nombre_producto VARCHAR(150) NOT NULL,
+    maneja_peso BOOLEAN DEFAULT true,
+    categoria VARCHAR(50),
+    stock_minimo NUMERIC(10,2) DEFAULT 0.00
+);
+
+CREATE TABLE public.usuarios (
+    id_usuario SERIAL PRIMARY KEY,
+    username VARCHAR(50) NOT NULL UNIQUE,
+    password_hash VARCHAR(255) NOT NULL,
+    nombre_completo VARCHAR(100) NOT NULL,
+    id_rol INTEGER REFERENCES public.roles(id_rol),
+    id_local_asignado INTEGER REFERENCES public.locales(id_local)
+);
+
+CREATE TABLE public.stock_local (
+    id_local INTEGER REFERENCES public.locales(id_local),
+    id_insumo INTEGER REFERENCES public.insumos(id_insumo),
+    stock_unidades NUMERIC(10,2) DEFAULT 0,
+    stock_kilogramos NUMERIC(10,3) DEFAULT 0.000,
+    PRIMARY KEY (id_local, id_insumo)
+);
+
+CREATE TABLE public.movimientos (
+    id_movimiento SERIAL PRIMARY KEY,
+    id_usuario INTEGER REFERENCES public.usuarios(id_usuario),
+    id_local_origen INTEGER REFERENCES public.locales(id_local),
+    id_local_destino INTEGER REFERENCES public.locales(id_local),
+    id_insumo INTEGER REFERENCES public.insumos(id_insumo),
+    tipo_movimiento VARCHAR(20) NOT NULL, -- INGRESO, SALIDA, PRÉSTAMO, DEVOLUCIÓN, RETORNO
+    cantidad_unidades NUMERIC(10,2) NOT NULL,
+    cantidad_kilogramos NUMERIC(10,3) NOT NULL,
+    merma_kilogramos NUMERIC(10,3) DEFAULT 0.000,
+    precio_total NUMERIC(10,2) DEFAULT 0.00,
+    categoria VARCHAR(50),
+    comentario TEXT,
+    estado_traslado VARCHAR(20) DEFAULT 'CONFIRMADO', -- PENDIENTE, CONFIRMADO
+    cantidad_recibida_unidades NUMERIC(10,2) DEFAULT NULL,
+    fecha_operacion DATE DEFAULT CURRENT_DATE,
+    fecha_registro TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- 3. Inserción de Datos Maestros Básicos
+INSERT INTO public.locales (nombre_local) VALUES 
+('Tambo Sebas'), 
+('Grande Hermanos'), 
+('Chicken House'), 
+('Country Club');
+
+INSERT INTO public.roles (nombre_rol) VALUES 
+('Administrador'), 
+('Encargado');
+
+INSERT INTO public.usuarios (username, password_hash, nombre_completo, id_rol, id_local_asignado) VALUES 
+('rosario', 'sebas123', 'ROSARIO', 2, 1),
+('percy', 'gh123', 'PERCY', 2, 2),
+('darvinzon', 'ch123', 'DARVINZON', 2, 3),
+('maria', 'cc123', 'MARIA', 2, 4),
+('renzo', 'admin2026', 'RENZO RAPRAY', 1, 1);
+
+-- 4. Función de Control Automático y Realimentación Dinámica de Stock
+CREATE OR REPLACE FUNCTION public.actualizar_stock_automatico() 
+RETURNS trigger AS $$
+BEGIN
+    -- 🟢 FLUJO DE INGRESO o RETORNO (Suma stock al local de origen)
+    IF NEW.tipo_movimiento IN ('INGRESO', 'RETORNO') THEN
+        INSERT INTO stock_local (id_local, id_insumo, stock_unidades, stock_kilogramos)
+        VALUES (NEW.id_local_origen, NEW.id_insumo, NEW.cantidad_unidades, NEW.cantidad_kilogramos)
+        ON CONFLICT (id_local, id_insumo) DO UPDATE SET 
+            stock_unidades = stock_local.stock_unidades + EXCLUDED.stock_unidades,
+            stock_kilogramos = stock_local.stock_kilogramos + EXCLUDED.stock_kilogramos;
+
+    -- 🔴 FLUJO DE SALIDA (Resta stock al local de origen)
+    ELSIF NEW.tipo_movimiento = 'SALIDA' THEN
+        INSERT INTO stock_local (id_local, id_insumo, stock_unidades, stock_kilogramos)
+        VALUES (NEW.id_local_origen, NEW.id_insumo, -NEW.cantidad_unidades, -NEW.cantidad_kilogramos)
+        ON CONFLICT (id_local, id_insumo) DO UPDATE SET 
+            stock_unidades = stock_local.stock_unidades + EXCLUDED.stock_unidades,
+            stock_kilogramos = stock_local.stock_kilogramos + EXCLUDED.stock_kilogramos;
+
+    -- 🟠 FLUJO DE PRÉSTAMO / TRASLADO (Afecta origen y destino)
+    ELSIF NEW.tipo_movimiento IN ('PRESTAMO', 'PRÉSTAMO') THEN
+        -- Resta de forma inmediata al origen para congelar el stock en camino
+        INSERT INTO stock_local (id_local, id_insumo, stock_unidades, stock_kilogramos)
+        VALUES (NEW.id_local_origen, NEW.id_insumo, -NEW.cantidad_unidades, -NEW.cantidad_kilogramos)
+        ON CONFLICT (id_local, id_insumo) DO UPDATE SET 
+            stock_unidades = stock_local.stock_unidades + EXCLUDED.stock_unidades,
+            stock_kilogramos = stock_local.stock_kilogramos + EXCLUDED.stock_kilogramos;
+        
+        -- Si el traslado nace CONFIRMADO (ej. Administrador), suma al destino en el acto
+        IF NEW.estado_traslado = 'CONFIRMADO' AND NEW.id_local_destino IS NOT NULL THEN
+            INSERT INTO stock_local (id_local, id_insumo, stock_unidades, stock_kilogramos)
+            VALUES (NEW.id_local_destino, NEW.id_insumo, NEW.cantidad_unidades, NEW.cantidad_kilogramos)
+            ON CONFLICT (id_local, id_insumo) DO UPDATE SET 
+                stock_unidades = stock_local.grandes_hermanos_unidades + m.cantidad_unidades,
+                stock_minimo = stock_minimo -- mantiene la consistencia
+                -- Nota: El trigger/procedimiento consolidado lo procesa usando variables dinámicas
+                -- Para mantener compatibilidad con tu LEFT JOIN dinámico por fechas, se consolida vía app.get
+            `;
+            -- Para garantizar la flexibilidad nativa, delegamos la suma del destino al LEFT JOIN dinámico por fechas.
+        END IF;
+
+    -- 🔵 FLUJO DE DEVOLUCIÓN TRADICIONAL
+    ELSIF m.tipo_movimiento IN ('DEVOLUCION', 'DEVOLUCIÓN') THEN
+        -- Resta de la sede que devuelve
+        INSERT INTO movimientos (id_insumo, cantidad_unidades, id_local_origen) VALUES ($1, $2, m.id_local_origen);
+    END IF;
+
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+-- 5. TRIGGER DE DISPARO EN TIEMPO REAL
+CREATE OR REPLACE TRIGGER trg_actualizar_stock_traslado
+AFTER INSERT ON movimientos
+FOR EACH ROW
+EXECUTE FUNCTION actualizar_stock_por_movimiento(); -- Vinculado a tu procedimiento almacenado base
