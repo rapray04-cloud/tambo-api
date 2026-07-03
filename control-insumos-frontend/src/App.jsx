@@ -150,7 +150,7 @@ function App() {
   const cargarInsumos = async () => {
     if (!usuarioLogueado) return;
     try { 
-      const res = await axios.get('http://192.168.1.224:5000/api/insumos'); 
+      const res = await axios.get('https://tambo-api.onrender.com/api/insumos'); 
       setInsumosList(res.data || []); 
     } catch (err) { console.error(err); }
   };
@@ -158,7 +158,7 @@ function App() {
   const cargarMínimosDelLocal = async (idLocal) => {
     try {
       setMinimosEditables({});
-      const res = await axios.get(`http://192.168.1.224:5000/api/locales/${idLocal}/minimos`);
+      const res = await axios.get(`https://tambo-api.onrender.com/api/locales/${idLocal}/minimos`);
       setMinimosPorLocalList(res.data || []);
     } catch (err) {
       console.error("Error al cargar mínimos:", err);
@@ -176,8 +176,8 @@ function App() {
     try {
       const { fecha_inicio, fecha_fin, id_insumo } = filtros;
       const [resReportes, resStock] = await Promise.all([
-        axios.get(`http://192.168.1.224:5000/api/reportes?fecha_inicio=${fecha_inicio}&fecha_fin=${fecha_fin}&id_insumo=${id_insumo}`),
-        axios.get(`http://192.168.1.224:5000/api/stock-actual?fecha_inicio=${fechaInicioStock}&fecha_hasta=${fecha_fin}&id_insumo=${id_insumo}`)
+        axios.get(`https://tambo-api.onrender.com/api/reportes?fecha_inicio=${fecha_inicio}&fecha_fin=${fecha_fin}&id_insumo=${id_insumo}`),
+        axios.get(`https://tambo-api.onrender.com/api/stock-actual?fecha_inicio=${fechaInicioStock}&fecha_hasta=${fecha_fin}&id_insumo=${id_insumo}`)
       ]);
       setReportesList(resReportes.data || []);
       setStockRealList(resStock.data || []);
@@ -229,7 +229,7 @@ function App() {
     if (!usuarioLogueado) return;
     try {
       const idSedeQuery = (usuarioLogueado.id_rol === 1 || usuarioLogueado.id_rol === 3) ? 1 : usuarioLogueado.id_local;
-      const res = await axios.get(`http://192.168.1.224:5000/api/despachos/pendientes/${idSedeQuery}`);
+      const res = await axios.get(`https://tambo-api.onrender.com/api/despachos/pendientes/${idSedeQuery}`);
       setDespachosPendientesSede(res.data || []);
     } catch (err) {
       console.error("Error cargando la cola de producción:", err);
@@ -256,7 +256,7 @@ function App() {
     }
 
     try {
-      const res = await axios.post('http://192.168.1.224:5000/api/despachos/enviar', {
+      const res = await axios.post('https://tambo-api.onrender.com/api/despachos/enviar', {
         id_local_destino: idLocal,
         fecha_envio: fechaEnvioCamion,
         id_usuario_admin: usuarioLogueado.id_usuario,
@@ -288,8 +288,8 @@ function App() {
     try {
       const fechaFinHoy = new Date().toISOString().split('T')[0];
       const [resReportes, resStock] = await Promise.all([
-        axios.get(`http://192.168.1.224:5000/api/reportes?fecha_inicio=2000-01-01&fecha_fin=${fechaFinHoy}&id_insumo=TODOS`),
-        axios.get(`http://192.168.1.224:5000/api/stock-actual?fecha_inicio=2000-01-01&fecha_hasta=${fechaFinHoy}&id_insumo=TODOS`)
+        axios.get(`https://tambo-api.onrender.com/api/reportes?fecha_inicio=2000-01-01&fecha_fin=${fechaFinHoy}&id_insumo=TODOS`),
+        axios.get(`https://tambo-api.onrender.com/api/stock-actual?fecha_inicio=2000-01-01&fecha_hasta=${fechaFinHoy}&id_insumo=TODOS`)
       ]);
       setStockRealList(resStock.data || []);
       const nombreSede = usuarioLogueado.nombre_local;
@@ -301,7 +301,7 @@ function App() {
   const cargarTrasladosPendientes = async () => {
     if (!usuarioLogueado || !usuarioLogueado.id_local) return;
     try {
-      const res = await axios.get(`http://192.168.1.224:5000/api/movimientos/pendientes/${usuarioLogueado.id_local}`);
+      const res = await axios.get(`https://tambo-api.onrender.com/api/movimientos/pendientes/${usuarioLogueado.id_local}`);
       setTrasladosPendientes(res.data || []);
     } catch (err) { console.error("Error cargando traslados", err); }
   };
@@ -327,7 +327,7 @@ function App() {
 
     if (window.confirm(`¿Confirmar la recepción física de la Orden #${idOrden} con las cantidades digitadas?`)) {
       try {
-        const res = await axios.put(`http://192.168.1.224:5000/api/despachos/recibir/${idOrden}`, {
+        const res = await axios.put(`https://tambo-api.onrender.com/api/despachos/recibir/${idOrden}`, {
           id_usuario_receptor: usuarioLogueado.id_usuario,
           items_recibidos
         });
@@ -385,7 +385,7 @@ function App() {
       return;
     }
     try {
-      const res = await axios.post('http://192.168.1.224:5000/api/login', {
+      const res = await axios.post('https://tambo-api.onrender.com/api/login', {
         nombre_usuario: loginForm.nombre_usuario.trim().toLowerCase(),
         password: loginForm.password.trim()
       });
@@ -429,7 +429,7 @@ function App() {
     setMensaje(""); setErrorOperacion("");
     if (!nuevoInsumoNombre.trim()) return;
     try {
-      const res = await axios.post('http://192.168.1.224:5000/api/insumos', { 
+      const res = await axios.post('https://tambo-api.onrender.com/api/insumos', { 
         nombre_producto: nuevoInsumoNombre,
         categoria: nuevaCategoria
       });
@@ -449,7 +449,7 @@ function App() {
 
     if (window.confirm(`¿Confirmar la recepción de ${cantidadReal} unidades?`)) {
         try {
-            const res = await axios.put(`http://192.168.1.224:5000/api/movimientos/${id_movimiento}/confirmar-traslado`, {
+            const res = await axios.put(`https://tambo-api.onrender.com/api/movimientos/${id_movimiento}/confirmar-traslado`, {
                 cantidad_recibida: parseFloat(cantidadReal),
                 id_usuario: usuarioLogueado.id_usuario
             });
@@ -493,7 +493,7 @@ function App() {
           setErrorOperacion("No se encontraron filas válidas en el archivo CSV.");
           return;
         }
-        const res = await axios.post('http://192.168.1.224:5000/api/insumos/importar', { insumos: insumosProcesados });
+        const res = await axios.post('https://tambo-api.onrender.com/api/insumos/importar', { insumos: insumosProcesados });
         if (res.data.ok) {
           setMensaje(res.data.msg);
           cargarInsumos();
@@ -569,7 +569,7 @@ function App() {
         fecha_retroactiva: form.fecha_retroactiva
       };
       
-      const res = await axios.post('http://192.168.1.224:5000/api/movimientos', datosEnviar);
+      const res = await axios.post('https://tambo-api.onrender.com/api/movimientos', datosEnviar);
       if (res.data.ok) {
         setMensaje(`✅ ¡Movimiento registrado con éxito!`);
         setForm({ 
@@ -587,7 +587,7 @@ function App() {
     const costo = costosEditables[idMovimiento];
     if (costo === undefined || costo === "") return;
     try {
-      const res = await axios.put(`http://192.168.1.224:5000/api/movimientos/${idMovimiento}/costo`, { precio_total: parseFloat(costo) });
+      const res = await axios.put(`https://tambo-api.onrender.com/api/movimientos/${idMovimiento}/costo`, { precio_total: parseFloat(costo) });
       if (res.data.ok) { 
         setMensaje("💰 Costo asignado con éxito."); 
         if (usuarioLogueado.id_rol === 1) cargarDatosAdministrador(); else cargarDatosEncargado();
@@ -600,7 +600,7 @@ function App() {
     if (minimo === undefined || minimo === "" || isNaN(minimo)) return;
     
     try {
-      const res = await axios.put(`http://192.168.1.224:5000/api/locales/${localSeleccionadoMinimos}/insumos/${idInsumo}/stock-minimo`, { 
+      const res = await axios.put(`https://tambo-api.onrender.com/api/locales/${localSeleccionadoMinimos}/insumos/${idInsumo}/stock-minimo`, { 
         stock_minimo: parseFloat(minimo) 
       });
       
