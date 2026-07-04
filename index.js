@@ -258,46 +258,64 @@ app.put('/api/movimientos/:idMovimiento/costo', async (req, res) => {
 // =============================================================================
 app.get('/api/stock-actual', async (req, res) => {
   try {
-    const { id_insumo } = req.query;
-    let filterInsumo = '';
-    const params = [];
-
-    if (id_insumo && id_insumo !== 'TODOS') {
-      filterInsumo = 'WHERE i.id_insumo = $1';
-      params.push(id_insumo);
+    const { fecha_inicio, fecha_hasta, id_insumo } = req.query;
+    
+    let filtroFechas = "";
+    if (fecha_inicio && fecha_hasta) {
+      filtroFechas = `AND m.fecha_operacion BETWEEN '${fecha_inicio}' AND '${fecha_hasta}'`;
     }
 
-    const queryStr = `
+    let filtroInsumo = "";
+    if (id_insumo && id_insumo !== 'TODOS') {
+      filtroInsumo = `AND i.id_insumo = ${parseInt(id_insumo)}`;
+    }
+
+    // ✨ Consulta corregida: Se evalúan las fechas dentro de cada CASE WHEN para que liste SIEMPRE todos los insumos del maestro
+    const query = `
       SELECT 
         i.id_insumo,
         i.codigo_producto,
         i.nombre_producto,
         i.categoria,
         i.maneja_peso,
-        -- Tambo Sebas (ID 1)
-        COALESCE((SELECT stock_unidades FROM public.stock_local WHERE id_local = 1 AND id_insumo = i.id_insumo), 0) as tambo_sebas_unidades,
-        COALESCE((SELECT stock_minimo FROM public.stock_local WHERE id_local = 1 AND id_insumo = i.id_insumo), 0) as min_tambo_sebas,
-        -- Grande Hermanos (ID 2)
-        COALESCE((SELECT stock_unidades FROM public.stock_local WHERE id_local = 2 AND id_insumo = i.id_insumo), 0) as grandes_hermanos_unidades,
-        COALESCE((SELECT stock_minimo FROM public.stock_local WHERE id_local = 2 AND id_insumo = i.id_insumo), 0) as min_grandes_hermanos,
-        -- Chicken House (ID 3)
-        COALESCE((SELECT stock_unidades FROM public.stock_local WHERE id_local = 3 AND id_insumo = i.id_insumo), 0) as chicken_house_unidades,
-        COALESCE((SELECT stock_minimo FROM public.stock_local WHERE id_local = 3 AND id_insumo = i.id_insumo), 0) as min_chicken_house,
-        -- Country Club (ID 4)
-        COALESCE((SELECT stock_unidades FROM public.stock_local WHERE id_local = 4 tactics AND id_insumo = i.id_insumo), 0) as country_club_unidades,
-        COALESCE((SELECT stock_minimo FROM public.stock_local WHERE id_local = 4 AND id_insumo = i.id_insumo), 0) as min_country_club,
-        -- Costo promedio referencial en 0 base
-        0.00 as costo_unitario_promedio
+        i.peso_teorico_kg,
+        COALESCE(sl1.stock_minimo, 0) AS min_tambo_sebas,
+        COALESCE(sl2.stock_minimo, 0) AS min_grandes_hermanos,
+        COALESCE(sl3.stock_minimo, 0) AS min_chicken_house,
+        COALESCE(sl4.stock_minimo, 0) AS min_country_club,
+        COALESCE(SUM(CASE WHEN m.id_local_origen = 1 AND m.tipo_movimiento IN ('INGRESO', 'RETORNO') ${filtroFechas} THEN m.cantidad_unidades 
+                          WHEN m.id_local_origen = 1 AND m.tipo_movimiento IN ('SALIDA', 'PRESTAMO') ${filtroFechas} THEN -m.cantidad_unidades
+                          WHEN m.id_local_destino = 1 AND m.tipo_movimiento IN ('PRESTAMO', 'DEVOLUCION') AND m.estado_traslado = 'CONFIRMADO' ${filtroFechas} THEN m.cantidad_recibida_unidades
+                          ELSE 0 END), 0) AS tambo_sebas_unidades,
+        COALESCE(SUM(CASE WHEN m.id_local_origen = 2 AND m.tipo_movimiento IN ('INGRESO', 'RETORNO') ${filtroFechas} THEN m.cantidad_unidades 
+                          WHEN m.id_local_origen = 2 AND m.tipo_movimiento IN ('SALIDA', 'PRESTAMO') ${filtroFechas} THEN -m.cantidad_unidades
+                          WHEN m.id_local_destino = 2 AND m.tipo_movimiento IN ('PRESTAMO', 'DEVOLUCION') AND m.estado_traslado = 'CONFIRMADO' ${filtroFechas} THEN m.cantidad_recibida_unidades
+                          ELSE 0 END), 0) AS grandes_hermanos_unidades,
+        COALESCE(SUM(CASE WHEN m.id_local_origen = 3 AND m.tipo_movimiento IN ('INGRESO', 'RETORNO') ${filtroFechas} THEN m.cantidad_unidades 
+                          WHEN m.id_local_origen = 3 AND m.tipo_movimiento IN ('SALIDA', 'PRESTAMO') ${filtroFechas} THEN -m.cantidad_unidades
+                          WHEN m.id_local_destino = 3 AND m.tipo_movimiento IN ('PRESTAMO', 'DEVOLUCION') AND m.estado_traslado = 'CONFIRMADO' ${filtroFechas} THEN m.cantidad_recibida_unidades
+                          ELSE 0 END), 0) AS chicken_house_unidades,
+        COALESCE(SUM(CASE WHEN m.id_local_origen = 4 AND m.tipo_movimiento IN ('INGRESO', 'RETORNO') ${filtroFechas} THEN m.cantidad_unidades 
+                          WHEN m.id_local_origen = 4 AND m.tipo_movimiento IN ('SALIDA', 'PRESTAMO') ${filtroFechas} THEN -m.cantidad_unidades
+                          WHEN m.id_local_destino = 4 AND m.tipo_movimiento IN ('PRESTAMO', 'DEVOLUCION') AND m.estado_traslado = 'CONFIRMADO' ${filtroFechas} THEN m.cantidad_recibida_unidades
+                          ELSE 0 END), 0) AS country_club_unidades,
+        (SELECT COALESCE(AVG(precio_por_kg), 0) FROM movimientos WHERE id_insumo = i.id_insumo AND tipo_movimiento = 'INGRESO' AND precio_por_kg > 0) AS costo_unitario_promedio
       FROM public.insumos i
-      ${filterInsumo}
-      ORDER BY i.id_insumo ASC
+      LEFT JOIN public.movimientos m ON i.id_insumo = m.id_insumo
+      LEFT JOIN public.stock_local sl1 ON i.id_insumo = sl1.id_insumo AND sl1.id_local = 1
+      LEFT JOIN public.stock_local sl2 ON i.id_insumo = sl2.id_insumo AND sl2.id_local = 2
+      LEFT JOIN public.stock_local sl3 ON i.id_insumo = sl3.id_insumo AND sl3.id_local = 3
+      LEFT JOIN public.stock_local sl4 ON i.id_insumo = sl4.id_insumo AND sl4.id_local = 4
+      WHERE 1=1 ${filtroInsumo}
+      GROUP BY i.id_insumo, i.codigo_producto, i.nombre_producto, i.categoria, i.maneja_peso, i.peso_teorico_kg, sl1.stock_minimo, sl2.stock_minimo, sl3.stock_minimo, sl4.stock_minimo
+      ORDER BY i.categoria ASC, i.nombre_producto ASC;
     `;
 
-    const result = await pool.query(queryStr, params);
-    return res.json(result.rows);
+    const result = await db.query(query);
+    res.json(result.rows);
   } catch (err) {
     console.error(err);
-    return res.status(500).json({ error: 'Error en cálculo de matriz' });
+    res.status(500).json({ ok: false, msg: "Error al consultar la matriz consolidada" });
   }
 });
 
