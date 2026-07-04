@@ -311,7 +311,7 @@ app.get('/api/stock-actual', async (req, res) => {
       ORDER BY i.categoria ASC, i.nombre_producto ASC;
     `;
 
-    const result = await db.query(query);
+    const result = await pool.query(query);
     res.json(result.rows);
   } catch (err) {
     console.error(err);
