@@ -299,7 +299,7 @@ app.get('/api/stock-actual', async (req, res) => {
                           WHEN m.id_local_origen = 4 AND m.tipo_movimiento IN ('SALIDA', 'PRESTAMO') ${filtroFechas} THEN -m.cantidad_unidades
                           WHEN m.id_local_destino = 4 AND m.tipo_movimiento IN ('PRESTAMO', 'DEVOLUCION') AND m.estado_traslado = 'CONFIRMADO' ${filtroFechas} THEN m.cantidad_recibida_unidades
                           ELSE 0 END), 0) AS country_club_unidades,
-        (SELECT COALESCE(AVG(precio_por_kg), 0) FROM movimientos WHERE id_insumo = i.id_insumo AND tipo_movimiento = 'INGRESO' AND precio_por_kg > 0) AS costo_unitario_promedio
+        (SELECT COALESCE(AVG(precio_total), 0) FROM movimientos WHERE id_insumo = i.id_insumo AND tipo_movimiento = 'INGRESO' AND precio_total > 0) AS costo_unitario_promedio
       FROM public.insumos i
       LEFT JOIN public.movimientos m ON i.id_insumo = m.id_insumo
       LEFT JOIN public.stock_local sl1 ON i.id_insumo = sl1.id_insumo AND sl1.id_local = 1
