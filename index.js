@@ -361,16 +361,126 @@ app.put('/api/movimientos/:idMovimiento/confirmar-traslado', async (req, res) =>
 });
 
 // Rutas Mock de la cola de despachos para que no tire error 404 tu App.jsx
+// 1. OBTENER DESPACHOS PENDIENTES (Para Planta y Alertas de Encargado)
 app.get('/api/despachos/pendientes/:idLocal', async (req, res) => {
-  return res.json([]);
+  try {
+    const { idLocal } = req.params;
+    let queryStr = "";
+    let params = [];
+
+    // Si el local es 1, o rol administrador/planta, listamos todos los despachos ENVIADOS (en camino)
+    if (parseInt(idLocal) === 1) {
+      queryStr = `
+        SELECT o.id_orden, o.fecha_envio, l.nombre_local as origen, i.nombre_producto as insumo, i.categoria,
+               d.id_detalle, d.id_insumo, d.cantidad_aprobada_admin, o.estado_orden
+        FROM public.ordenes_despacho o
+        JOIN public.ordenes_despacho_detalle d ON o.id_orden = d.id_orden
+        JOIN public.locales l ON o.id_local_destino = l.id_local
+        JOIN public.insumos i ON d.id_insumo = i.id_insumo
+        WHERE o.estado_orden = 'ENVIADO'
+        ORDER BY o.id_orden DESC
+      `;
+    } else {
+      // Si es una sede específica, solo ve lo enviado a su ID local
+      queryStr = `
+        SELECT o.id_orden, o.fecha_envio, l.nombre_local as origen, i.nombre_producto as insumo, i.categoria,
+               d.id_detalle, d.id_insumo, d.cantidad_aprobada_admin, o.estado_orden
+        FROM public.ordenes_despacho o
+        JOIN public.ordenes_despacho_detalle d ON o.id_orden = d.id_orden
+        JOIN public.locales l ON o.id_local_destino = l.id_local
+        JOIN public.insumos i ON d.id_insumo = i.id_insumo
+        WHERE o.id_local_destino = $1 AND o.estado_orden = 'ENVIADO'
+        ORDER BY o.id_orden DESC
+      `;
+      params.push(idLocal);
+    }
+
+    const result = await pool.query(queryStr, params);
+    return res.json(result.rows);
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({ error: 'Error al cargar despacho de planta' });
+  }
 });
 
+// 2. CREAR Y ENVIAR NUEVA ORDEN A PLANTA DESDE MATRIZ ADMIN
 app.post('/api/despachos/enviar', async (req, res) => {
-  return res.json({ ok: true, msg: 'Orden enviada a planta de forma virtual.' });
+  try {
+    const { id_local_destino, fecha_envio, id_usuario_admin, insumos_pedidos } = req.body;
+
+    // Insertamos la cabecera del pedido
+    const resCabecera = await pool.query(
+      `INSERT INTO public.ordenes_despacho (id_local_destino, fecha_envio, id_usuario_admin, estado_orden)
+       VALUES ($1, $2, $3, 'ENVIADO') RETURNING id_orden`,
+      [id_local_destino, fecha_envio, id_usuario_admin]
+    );
+
+    const idOrdenNueva = resCabecera.rows[0].id_orden;
+
+    // Insertamos los detalles de cada insumo pedido
+    for (const item of insumos_pedidos) {
+      await pool.query(
+        `INSERT INTO public.ordenes_despacho_detalle (id_orden, id_insumo, cantidad_aprobada_admin)
+         VALUES ($1, $2, $3)`,
+        [idOrdenNueva, item.id_insumo, item.cantidad]
+      );
+    }
+
+    return res.json({ ok: true, msg: `🚀 Orden #${idOrdenNueva} registrada y enviada a la cola de producción con éxito.` });
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({ error: 'Error al procesar el despacho de planta' });
+  }
 });
 
+// 3. RECIBIR Y DESCARGAR DESPACHO EN LA SEDE (Suma al stock_local automáticamente)
 app.put('/api/despachos/recibir/:idOrden', async (req, res) => {
-  return res.json({ ok: true, msg: 'Despacho recibido.' });
+  try {
+    const { idOrden } = req.params;
+    const { id_usuario_receptor, items_recibidos } = req.body;
+
+    // 1. Cambiamos el estado de la cabecera a ENTREGADO
+    await pool.query(
+      `UPDATE public.ordenes_despacho SET estado_orden = 'ENTREGADO' WHERE id_orden = $1`,
+      [idOrden]
+    );
+
+    // 2. Procesamos cada insumo recibido
+    for (const item of items_recibidos) {
+      // Actualizamos el detalle con el conteo real del encargado
+      await pool.query(
+        `UPDATE public.ordenes_despacho_detalle 
+         SET cantidad_recibida_local = $1, id_usuario_receptor = $2, fecha_recepcion = CURRENT_TIMESTAMP
+         WHERE id_detalle = $3`,
+        [item.cantidad_real, id_usuario_receptor, item.id_detalle]
+      );
+
+      // Obtenemos el ID del local destino para sumarle el stock
+      const resLocal = await pool.query(`SELECT id_local_destino FROM public.ordenes_despacho WHERE id_orden = $1`, [idOrden]);
+      const idLocalDestino = resLocal.rows[0].id_local_destino;
+
+      // Sumamos la cantidad física recibida directamente en su inventario de la tabla stock_local
+      await pool.query(
+        `UPDATE public.stock_local 
+         SET stock_unidades = stock_unidades + $1 
+         WHERE id_local = $2 AND id_insumo = $3`,
+        [item.cantidad_real, idLocalDestino, item.id_insumo]
+      );
+
+      // Guardamos un registro histórico en movimientos tipo INGRESO para auditoría del Excel
+      await pool.query(
+        `INSERT INTO public.movimientos 
+         (id_insumo, tipo_movimiento, cantidad_unidades, id_local_origen, comentario, categoria, id_usuario, estado_traslado)
+         VALUES ($1, 'INGRESO', $2, $3, 'DESPACHO RECIBIDO DESDE PLANTA', $4, $5, 'CONFIRMADO')`,
+        [item.id_insumo, item.cantidad_real, idLocalDestino, item.categoria, id_usuario_receptor]
+      );
+    }
+
+    return res.json({ ok: true, msg: '✓ Mercadería descargada, registrada en historial e inyectada al stock de la sede con éxito.' });
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({ error: 'Error al recibir la orden de planta' });
+  }
 });
 
 // Enciende el servidor general
