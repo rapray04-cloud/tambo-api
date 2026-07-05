@@ -369,13 +369,14 @@ app.put('/api/movimientos/:idMovimiento/confirmar-traslado', async (req, res) =>
 
 // Rutas Mock de la cola de despachos para que no tire error 404 tu App.jsx
 // 1. OBTENER DESPACHOS PENDIENTES (Para Planta y Alertas de Encargado)
+// 1. OBTENER DESPACHOS (Historial Completo para Planta/Admin y SOLO PENDIENTES para Encargados)
 app.get('/api/despachos/pendientes/:idLocal', async (req, res) => {
   try {
     const { idLocal } = req.params;
     let queryStr = "";
     let params = [];
 
-    // Si el local es 1 (Admin o Planta), listamos TODOS los despachos históricos (ENVIADO y ENTREGADO) para que nunca se borren del historial
+    // Si el local es 1 (Admin o Planta de Producción), listamos TODO lo histórico para que nunca se borre
     if (parseInt(idLocal) === 1) {
       queryStr = `
         SELECT o.id_orden, o.fecha_envio, l.nombre_local as origen, i.nombre_producto as insumo, i.categoria,
@@ -387,7 +388,7 @@ app.get('/api/despachos/pendientes/:idLocal', async (req, res) => {
         ORDER BY o.id_orden DESC
       `;
     } else {
-      // Para el encargado de sucursal, SOLO mostramos los que están en camino ('ENVIADO') para que ponga su conteo
+      // 🚨 AQUÍ ESTÁ EL AJUSTE: Para el encargado de sucursal, filtramos ESTRICTAMENTE por o.estado_orden = 'ENVIADO'
       queryStr = `
         SELECT o.id_orden, o.fecha_envio, l.nombre_local as origen, i.nombre_producto as insumo, i.categoria,
                d.id_detalle, d.id_insumo, d.cantidad_aprobada_admin, o.estado_orden
@@ -408,7 +409,6 @@ app.get('/api/despachos/pendientes/:idLocal', async (req, res) => {
     return res.status(500).json({ error: 'Error al cargar despacho de planta' });
   }
 });
-
 // 2. CREAR Y ENVIAR NUEVA ORDEN A PLANTA DESDE MATRIZ ADMIN
 app.post('/api/despachos/enviar', async (req, res) => {
   try {
