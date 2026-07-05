@@ -334,9 +334,7 @@ function App() {
 
         if (res.data.ok) {
           alert(res.data.msg);
-          setCantidadesRealesEncargado(prev => { const n = {...prev}; itemsDeEstaOrden.forEach(i => delete n[i.id_detalle]); return n; });
-          cargarDespachosPlantaGeneral();
-          if (usuarioLogueado.id_rol === 1) cargarDatosAdministrador(); else cargarDatosEncargado();
+        window.location.reload();
         }
       } catch (err) {
         alert("Error al procesar la recepción del despacho.");
