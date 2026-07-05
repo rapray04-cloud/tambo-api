@@ -283,22 +283,29 @@ app.get('/api/stock-actual', async (req, res) => {
         COALESCE(sl2.stock_minimo, 0) AS min_grandes_hermanos,
         COALESCE(sl3.stock_minimo, 0) AS min_chicken_house,
         COALESCE(sl4.stock_minimo, 0) AS min_country_club,
-        COALESCE(SUM(CASE WHEN m.id_local_origen = 1 AND m.tipo_movimiento IN ('INGRESO', 'RETORNO') ${filtroFechas} THEN m.cantidad_unidades 
+      COALESCE(SUM(CASE WHEN m.id_local_origen = 1 AND m.tipo_movimiento IN ('INGRESO', 'RETORNO') ${filtroFechas} THEN m.cantidad_unidades 
                           WHEN m.id_local_origen = 1 AND m.tipo_movimiento IN ('SALIDA', 'PRESTAMO') ${filtroFechas} THEN -m.cantidad_unidades
                           WHEN m.id_local_destino = 1 AND m.tipo_movimiento IN ('PRESTAMO', 'DEVOLUCION') AND m.estado_traslado = 'CONFIRMADO' ${filtroFechas} THEN m.cantidad_recibida_unidades
-                          ELSE 0 END), 0) AS tambo_sebas_unidades,
+                          ELSE 0 END), 0) 
+        + COALESCE((SELECT SUM(dd.cantidad_aprobada_admin) FROM public.ordenes_despacho od JOIN public.ordenes_despacho_detalle dd ON od.id_orden = dd.id_orden WHERE od.id_local_destino = 1 AND dd.id_insumo = i.id_insumo AND od.estado_orden = 'ENVIADO'), 0) AS tambo_sebas_unidades,
+        
         COALESCE(SUM(CASE WHEN m.id_local_origen = 2 AND m.tipo_movimiento IN ('INGRESO', 'RETORNO') ${filtroFechas} THEN m.cantidad_unidades 
                           WHEN m.id_local_origen = 2 AND m.tipo_movimiento IN ('SALIDA', 'PRESTAMO') ${filtroFechas} THEN -m.cantidad_unidades
                           WHEN m.id_local_destino = 2 AND m.tipo_movimiento IN ('PRESTAMO', 'DEVOLUCION') AND m.estado_traslado = 'CONFIRMADO' ${filtroFechas} THEN m.cantidad_recibida_unidades
-                          ELSE 0 END), 0) AS grandes_hermanos_unidades,
+                          ELSE 0 END), 0)
+        + COALESCE((SELECT SUM(dd.cantidad_aprobada_admin) FROM public.ordenes_despacho od JOIN public.ordenes_despacho_detalle dd ON od.id_orden = dd.id_orden WHERE od.id_local_destino = 2 AND dd.id_insumo = i.id_insumo AND od.estado_orden = 'ENVIADO'), 0) AS grandes_hermanos_unidades,
+        
         COALESCE(SUM(CASE WHEN m.id_local_origen = 3 AND m.tipo_movimiento IN ('INGRESO', 'RETORNO') ${filtroFechas} THEN m.cantidad_unidades 
                           WHEN m.id_local_origen = 3 AND m.tipo_movimiento IN ('SALIDA', 'PRESTAMO') ${filtroFechas} THEN -m.cantidad_unidades
                           WHEN m.id_local_destino = 3 AND m.tipo_movimiento IN ('PRESTAMO', 'DEVOLUCION') AND m.estado_traslado = 'CONFIRMADO' ${filtroFechas} THEN m.cantidad_recibida_unidades
-                          ELSE 0 END), 0) AS chicken_house_unidades,
+                          ELSE 0 END), 0)
+        + COALESCE((SELECT SUM(dd.cantidad_aprobada_admin) FROM public.ordenes_despacho od JOIN public.ordenes_despacho_detalle dd ON od.id_orden = dd.id_orden WHERE od.id_local_destino = 3 AND dd.id_insumo = i.id_insumo AND od.estado_orden = 'ENVIADO'), 0) AS chicken_house_unidades,
+        
         COALESCE(SUM(CASE WHEN m.id_local_origen = 4 AND m.tipo_movimiento IN ('INGRESO', 'RETORNO') ${filtroFechas} THEN m.cantidad_unidades 
                           WHEN m.id_local_origen = 4 AND m.tipo_movimiento IN ('SALIDA', 'PRESTAMO') ${filtroFechas} THEN -m.cantidad_unidades
                           WHEN m.id_local_destino = 4 AND m.tipo_movimiento IN ('PRESTAMO', 'DEVOLUCION') AND m.estado_traslado = 'CONFIRMADO' ${filtroFechas} THEN m.cantidad_recibida_unidades
-                          ELSE 0 END), 0) AS country_club_unidades,
+                          ELSE 0 END), 0)
+        + COALESCE((SELECT SUM(dd.cantidad_aprobada_admin) FROM public.ordenes_despacho od JOIN public.ordenes_despacho_detalle dd ON od.id_orden = dd.id_orden WHERE od.id_local_destino = 4 AND dd.id_insumo = i.id_insumo AND od.estado_orden = 'ENVIADO'), 0) AS country_club_unidades,
         (SELECT COALESCE(AVG(precio_total), 0) FROM movimientos WHERE id_insumo = i.id_insumo AND tipo_movimiento = 'INGRESO' AND precio_total > 0) AS costo_unitario_promedio
       FROM public.insumos i
       LEFT JOIN public.movimientos m ON i.id_insumo = m.id_insumo
@@ -368,7 +375,7 @@ app.get('/api/despachos/pendientes/:idLocal', async (req, res) => {
     let queryStr = "";
     let params = [];
 
-    // Si el local es 1, o rol administrador/planta, listamos todos los despachos ENVIADOS (en camino)
+    // Si el local es 1 (Admin o Planta), listamos TODOS los despachos históricos (ENVIADO y ENTREGADO) para que nunca se borren del historial
     if (parseInt(idLocal) === 1) {
       queryStr = `
         SELECT o.id_orden, o.fecha_envio, l.nombre_local as origen, i.nombre_producto as insumo, i.categoria,
@@ -377,11 +384,10 @@ app.get('/api/despachos/pendientes/:idLocal', async (req, res) => {
         JOIN public.ordenes_despacho_detalle d ON o.id_orden = d.id_orden
         JOIN public.locales l ON o.id_local_destino = l.id_local
         JOIN public.insumos i ON d.id_insumo = i.id_insumo
-        WHERE o.estado_orden = 'ENVIADO'
         ORDER BY o.id_orden DESC
       `;
     } else {
-      // Si es una sede específica, solo ve lo enviado a su ID local
+      // Para el encargado de sucursal, SOLO mostramos los que están en camino ('ENVIADO') para que ponga su conteo
       queryStr = `
         SELECT o.id_orden, o.fecha_envio, l.nombre_local as origen, i.nombre_producto as insumo, i.categoria,
                d.id_detalle, d.id_insumo, d.cantidad_aprobada_admin, o.estado_orden
