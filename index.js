@@ -404,7 +404,7 @@ app.get('/api/despachos/pendientes/:idLocal', async (req, res) => {
         ORDER BY o.id_orden DESC
       `;
     } else {
-      // 🚨 AQUÍ ESTÁ EL AJUSTE: Para el encargado de sucursal, filtramos ESTRICTAMENTE por o.estado_orden = 'ENVIADO'
+      // 🟢 CORRECCIÓN COMPLETA: Buscamos estados 'ENVIADO' o 'EN CAMINO'. Al pasar a 'ENTREGADO' desaparecerá al instante.
       queryStr = `
         SELECT o.id_orden, o.fecha_envio, l.nombre_local as origen, i.nombre_producto as insumo, i.categoria,
                d.id_detalle, d.id_insumo, d.cantidad_aprobada_admin, o.estado_orden
@@ -412,7 +412,7 @@ app.get('/api/despachos/pendientes/:idLocal', async (req, res) => {
         JOIN public.ordenes_despacho_detalle d ON o.id_orden = d.id_orden
         JOIN public.locales l ON o.id_local_destino = l.id_local
         JOIN public.insumos i ON d.id_insumo = i.id_insumo
-        WHERE o.id_local_destino = $1 AND o.estado_orden = 'ENVIADO'
+        WHERE o.id_local_destino = $1 AND o.estado_orden IN ('ENVIADO', 'EN CAMINO')
         ORDER BY o.id_orden DESC
       `;
       params.push(idLocal);
