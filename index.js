@@ -392,8 +392,8 @@ app.get('/api/despachos/pendientes/:idLocal', async (req, res) => {
     let queryStr = "";
     let params = [];
 
-    // Si el local es 1 (Admin o Planta de Producción), listamos TODO lo histórico para que nunca se borre
-    if (parseInt(idLocal) === 1) {
+    // 🟢 CORRECCIÓN: Si viene 'PLANTA_GLOBAL', es el Admin o Planta y listamos todo el histórico
+    if (idLocal === 'PLANTA_GLOBAL') {
       queryStr = `
         SELECT o.id_orden, o.fecha_envio, l.nombre_local as origen, i.nombre_producto as insumo, i.categoria,
                d.id_detalle, d.id_insumo, d.cantidad_aprobada_admin, o.estado_orden
@@ -404,7 +404,7 @@ app.get('/api/despachos/pendientes/:idLocal', async (req, res) => {
         ORDER BY o.id_orden DESC
       `;
     } else {
-      // 🟢 CORRECCIÓN COMPLETA: Buscamos estados 'ENVIADO' o 'EN CAMINO'. Al pasar a 'ENTREGADO' desaparecerá al instante.
+      // Si es una sede normal (incluyendo Tambo Sebas con ID 1), filtramos estrictamente por lo pendiente
       queryStr = `
         SELECT o.id_orden, o.fecha_envio, l.nombre_local as origen, i.nombre_producto as insumo, i.categoria,
                d.id_detalle, d.id_insumo, d.cantidad_aprobada_admin, o.estado_orden
@@ -415,7 +415,7 @@ app.get('/api/despachos/pendientes/:idLocal', async (req, res) => {
         WHERE o.id_local_destino = $1 AND o.estado_orden IN ('ENVIADO', 'EN CAMINO')
         ORDER BY o.id_orden DESC
       `;
-      params.push(idLocal);
+      params.push(parseInt(idLocal));
     }
 
     const result = await pool.query(queryStr, params);
