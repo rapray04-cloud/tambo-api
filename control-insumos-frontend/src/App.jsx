@@ -228,7 +228,8 @@ function App() {
   const cargarDespachosPlantaGeneral = async () => {
     if (!usuarioLogueado) return;
     try {
-      const idSedeQuery = (usuarioLogueado.id_rol === 1 || usuarioLogueado.id_rol === 3) ? 1 : usuarioLogueado.id_local;
+      // 🟢 CORRECCIÓN: Usamos 'PLANTA_GLOBAL' en vez de 1 para el Admin/Planta, liberando el ID 1 para Tambo Sebas
+      const idSedeQuery = (usuarioLogueado.id_rol === 1 || usuarioLogueado.id_rol === 3) ? 'PLANTA_GLOBAL' : usuarioLogueado.id_local;
       const res = await axios.get(`https://tambo-api.onrender.com/api/despachos/pendientes/${idSedeQuery}`);
       setDespachosPendientesSede(res.data || []);
     } catch (err) {
