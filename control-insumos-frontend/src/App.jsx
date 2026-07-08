@@ -54,7 +54,7 @@ const celdaAlertaAdminStyle = (unidades, minLocal, idRol) => {
   const n = parseFloat(unidades) || 0;
   const min = parseFloat(minLocal) || 0;
   
-  if (idRol === 1 && min > 0 && n < min) {
+  if (idRol === 1 && min > 0 && n <= min) {
     return {
       padding: '8px 10px',
       textAlign: 'center',
