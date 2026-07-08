@@ -174,27 +174,43 @@ app.put('/api/locales/:idLocal/insumos/:idInsumo/stock-minimo', async (req, res)
 app.post('/api/movimientos', async (req, res) => {
   try {
     const {
-      id_insumo, tipo_movimiento, cantidad_unidades, cantidad_kilogramos,
+      id_insumo, tipo_movimiento, cantidad_unidades,
       merma_kilogramos, id_local_origen, id_local_destino, comentario,
       categoria, id_usuario, precio_total, fecha_retroactiva
     } = req.body;
 
+    // 🎯 Consultamos el peso teórico del catálogo maestro para este insumo específico
+    const insumoQuery = await pool.query(
+      `SELECT maneja_peso, peso_teorico_kg FROM public.insumos WHERE id_insumo = $1`, 
+      [id_insumo]
+    );
+
+    let cantidad_kilogramos = 0;
+
+    if (insumoQuery.rows.length > 0) {
+      const { maneja_peso, peso_teorico_kg } = insumoQuery.rows[0];
+      // Si maneja peso, multiplicamos de forma exacta la cantidad de unidades por su equivalencia teórica en Kg
+      if (maneja_peso && peso_teorico_kg) {
+        cantidad_kilogramos = parseFloat(cantidad_unidades) * parseFloat(peso_teorico_kg);
+      }
+    }
+
     const queryStr = `
       INSERT INTO public.movimientos 
-      (id_insumo, tipo_movimiento, cantidad_unidades, cantidad_kilogramos, merma_kilogramos, id_local_origen, id_local_destino, comentario, categoria, id_usuario, precio_total, fecha_operacion)
+      (id_insumo, tipo_movimiento, cantidad_unidades, cantidad_kilogramos, merma_kilogramos, id_local_origen, id_local_destino, comentario, categoria, id_usuario, precio_total, fecha_operation)
       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12) RETURNING *
     `;
     
     const result = await pool.query(queryStr, [
       id_insumo, tipo_movimiento, cantidad_unidades, cantidad_kilogramos,
-      merma_kilogramos, id_local_origen, id_local_destino || null, comentario,
-      categoria, id_usuario, precio_total, fecha_retroactiva
+      merma_kilogramos || 0, id_local_origen, id_local_destino || null, comentario,
+      categoria, id_usuario, precio_total || 0, fecha_retroactiva
     ]);
 
     return res.json({ ok: true, data: result.rows[0] });
   } catch (err) {
     console.error(err);
-    return res.status(500).json({ error: 'Error al registrar movimiento' });
+    return res.status(500).json({ error: 'Error al registrar movimiento con cálculo automático' });
   }
 });
 
@@ -445,6 +461,23 @@ app.put('/api/despachos/recibir/:idOrden', async (req, res) => {
     const { idOrden } = req.params;
     const { id_usuario_receptor, items_recibidos } = req.body;
 
+    // 🔒 Candado de Seguridad Anti-Duplicados: Validar el estado actual de la orden
+    const validacion = await pool.query(
+      `SELECT estado_orden, id_local_destino FROM public.ordenes_despacho WHERE id_orden = $1`, 
+      [idOrden]
+    );
+
+    if (validacion.rows.length === 0) {
+      return res.status(404).json({ ok: false, msg: "La orden no existe." });
+    }
+
+    // Si ya fue procesada, devolvemos un mensaje de advertencia controlado
+    if (validacion.rows[0].estado_orden === 'ENTREGADO') {
+      return res.json({ ok: true, msg: "Esta orden ya fue descargada previamente por seguridad." });
+    }
+
+    const idLocalDestino = validacion.rows[0].id_local_destino;
+
     // 1. Cambiamos el estado de la cabecera a ENTREGADO
     await pool.query(
       `UPDATE public.ordenes_despacho SET estado_orden = 'ENTREGADO' WHERE id_orden = $1`,
@@ -460,10 +493,6 @@ app.put('/api/despachos/recibir/:idOrden', async (req, res) => {
          WHERE id_detalle = $3`,
         [item.cantidad_real, id_usuario_receptor, item.id_detalle]
       );
-
-      // Obtenemos el ID del local destino para sumarle el stock
-      const resLocal = await pool.query(`SELECT id_local_destino FROM public.ordenes_despacho WHERE id_orden = $1`, [idOrden]);
-      const idLocalDestino = resLocal.rows[0].id_local_destino;
 
       // Sumamos la cantidad física recibida directamente en su inventario de la tabla stock_local
       await pool.query(
