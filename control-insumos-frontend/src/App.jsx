@@ -306,7 +306,7 @@ function App() {
     } catch (err) { console.error("Error cargando traslados", err); }
   };
 
-  const handleRecibirDespachoPlanta = async (idOrden) => {
+ const handleRecibirDespachoPlanta = async (idOrden) => {
     const itemsDeEstaOrden = despachosPendientesSede.filter(d => d.id_orden === idOrden);
     
     const items_recibidos = itemsDeEstaOrden.map(item => {
@@ -334,14 +334,19 @@ function App() {
 
         if (res.data.ok) {
           alert(res.data.msg);
-        window.location.reload();
+          
+          // 🧼 Limpiamos los estados locales antes de recargar para asegurar un borrado absoluto en caché de React
+          setCantidadesRealesEncargado({});
+          setDespachosPendientesSede(prev => prev.filter(d => d.id_orden !== idOrden));
+          
+          // Refrescamos la sesión de inmediato
+          window.location.reload();
         }
       } catch (err) {
         alert("Error al procesar la recepción del despacho.");
       }
     }
   };
-
   useEffect(() => {
     if (usuarioLogueado && usuarioLogueado.id_local) {
         cargarTrasladosPendientes();
@@ -658,17 +663,25 @@ function App() {
     }).join('');
     
     let filasHistorial = reportesFiltrados.map(rep => {
-      const idMov = rep.Nro || rep.id_movimiento;
-      const total = parseFloat(rep.Total_Soles || rep.total_soles) || 0;
-      const op = (rep.Operacion || rep.tipo_movimiento || "").toUpperCase(); 
-      const area = rep.Categoria || rep.categoria || "COCINA";
-      const txtComentario = rep.comentario || rep.Comentario || '';
-      const uP = parseFloat(rep.Unds || rep.cantidad_unidades) || 0;
-      const kP = parseFloat(rep.Kilos || rep.cantidad_kilogramos) || 0;
-      const mP = parseFloat(rep.merma_kilogramos || rep.Merma_Kilos) || 0; 
-      
-      const costoUnitarioCalculado = op === "INGRESO" && uP > 0 ? `S/ ${(total / uP).toFixed(2)}` : "-";
-      const costoKgCalculado = op === "INGRESO" && kP > 0 ? `S/ ${(total / kP).toFixed(2)}` : "-";
+     const total = parseFloat(rep.Total_Soles || rep.total_soles) || 0;
+                    const txtComentario = rep.comentario || rep.Comentario || '';
+                    const uP = parseFloat(rep.Unds || rep.cantidad_unidades) || 0;
+                    let kP = parseFloat(rep.Kilos || rep.cantidad_kilogramos) || 0;
+                    
+                    // ⚖️ CÁLCULO DE RESCATE: Si los kilos históricos están en 0 pero hay unidades, intentamos buscar el peso unitario promedio
+                    if (kP === 0 && uP > 0) {
+                      const insumoMatriz = stockRealList.find(s => s.nombre_producto === nombreInsumo);
+                      const pesoTeorico = insumoMatriz ? parseFloat(insumoMatriz.peso_teorico_kg) : 0;
+                      if (pesoTeorico > 0) {
+                        kP = uP * pesoTeorico;
+                      }
+                    }
+                    
+                    const mKilos = rep.merma_kilogramos || rep.Merma_Kilos;
+                    const mP = mKilos ? parseFloat(mKilos) : 0; 
+
+                    const costoUnitarioCalculado = op === "INGRESO" && uP > 0 ? `S/ ${(total / uP).toFixed(2)}` : "-";
+                    const costoKgCalculado = op === "INGRESO" && kP > 0 ? `S/ ${(total / kP).toFixed(2)}` : "-";
       
       const clrOp = op === 'INGRESO' ? 'color: #15803d; background-color: #dcfce7;' : 
                     op === 'RETORNO' ? 'color: #b91c1c; background-color: #fee2e2;' : 
