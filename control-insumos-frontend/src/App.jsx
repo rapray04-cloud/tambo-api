@@ -1297,20 +1297,30 @@ function App() {
                     return (
                       <>
                        {stockRealFiltrado.map((stk, i) => {
-                          const cost = Number(stk.costo_unitario_promedio) || 0;
-                          const uS1 = Number(stk.tambo_sebas_unidades) || 0; 
-                          const uS2 = Number(stk.grandes_hermanos_unidades) || 0;
-                          const uS3 = Number(stk.chicken_house_unidades) || 0; 
-                          const uS4 = Number(stk.country_club_unidades) || 0;
-                          
-                          const vFila = (uS1 + uS2 + uS3 + uS4) * cost;
-                          totalTamboValor += uS1 * cost; 
-                          totalGrandesValor += uS2 * cost;
-                          totalChickenValor += uS3 * cost;
-                          totalCountryValor += uS4 * cost;
-                          totalCorp += vFila;
-                          
-                          return (
+          const cost = Number(stk.costo_unitario_promedio) || 0;
+          const uS1 = Number(stk.tambo_sebas_unidades) || 0; 
+          const uS2 = Number(stk.grandes_hermanos_unidades) || 0;
+          const uS3 = Number(stk.chicken_house_unidades) || 0; 
+          const uS4 = Number(stk.country_club_unidades) || 0;
+          
+          // ⚖️ CÁLCULO EN VIVO POR KG SEGÚN PESO TEÓRICO
+          const pesoTeorico = parseFloat(stk.peso_teorico_kg) || 0;
+
+          // 💰 CORRECCIÓN DEL TOTAL: Calculamos de forma independiente cada sede
+          const valorTambo = uS1 * cost;
+          const valorGrandes = uS2 * cost;
+          const valorChicken = uS3 * cost;
+          const valorCountry = uS4 * cost;
+          const vFila = valorTambo + valorGrandes + valorChicken + valorCountry;
+
+          // Acumulamos de manera limpia columna por columna para el pie de página
+          totalTamboValor += valorTambo; 
+          totalGrandesValor += valorGrandes;
+          totalChickenValor += valorChicken;
+          totalCountryValor += valorCountry;
+          totalCorp += vFila; 
+          
+          return (
                             <tr key={i} style={{ backgroundColor: '#ffffff' }}>
                               <td style={{ padding: '10px', fontWeight: '600', backgroundColor: '#f8fafc', position: 'sticky', left: 0, zIndex: 2, borderBottom: '1px solid #cbd5e1', borderRight: '1px solid #cbd5e1' }}>
                                 {stk.nombre_producto} 
