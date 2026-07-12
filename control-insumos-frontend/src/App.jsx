@@ -1303,22 +1303,23 @@ function App() {
           const uS3 = Number(stk.chicken_house_unidades) || 0; 
           const uS4 = Number(stk.country_club_unidades) || 0;
           
-          // ⚖️ CÁLCULO EN VIVO POR KG SEGÚN PESO TEÓRICO
           const pesoTeorico = parseFloat(stk.peso_teorico_kg) || 0;
 
-          // 💰 CORRECCIÓN DEL TOTAL: Calculamos de forma independiente cada sede
+          // 💰 RECALCULO ESTRICTO EN PANTALLA: Dinero real por cada sede
           const valorTambo = uS1 * cost;
           const valorGrandes = uS2 * cost;
           const valorChicken = uS3 * cost;
           const valorCountry = uS4 * cost;
-          const vFila = valorTambo + valorGrandes + valorChicken + valorCountry;
+          
+          // El total de la fila es la suma exacta de los montos de cada local
+          const totalMontoFila = valorTambo + valorGrandes + valorChicken + valorCountry;
 
-          // Acumulamos de manera limpia columna por columna para el pie de página
+          // Acumulamos de manera limpia para los totales globales del fondo gris
           totalTamboValor += valorTambo; 
           totalGrandesValor += valorGrandes;
           totalChickenValor += valorChicken;
           totalCountryValor += valorCountry;
-          totalCorp += vFila; 
+          totalCorp += totalMontoFila; 
           
           return (
                             <tr key={i} style={{ backgroundColor: '#ffffff' }}>
